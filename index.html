@@ -235,6 +235,10 @@ textarea{resize:vertical;min-height:70px}
 .spark{width:56px;height:18px;display:block}
 .seg.six{grid-template-columns:repeat(6,1fr)}
 .sec-help{font-size:.8rem;color:var(--muted)}
+.fhead{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.fhead>span{font-size:.8rem;font-weight:700;color:var(--muted)}
+.hypt{display:inline-flex;align-items:center;gap:4px;font-size:.74rem;color:var(--muted);white-space:nowrap}
+.hypt input{width:16px;height:16px;accent-color:var(--warn);margin:0}
 
 @media (prefers-reduced-motion:no-preference){.bar>span{transition:width .35s ease}}
 </style>
@@ -274,8 +278,8 @@ const STRESS=['Surexcité','Frustré','Inquiet','Stressé','Douleur / gêne'];
 const CONTEXTS=['Maison','Jardin','Forêt','Chemin','Ville','Terrain','Chaleur','Pluie','Froid','Distractions','Congénères'];
 const SCALES=[['success','Réussite','échec','parfait'],['ease','Facilité','très dur','très facile'],['motivation','Motivation','absente','très forte'],['fatigue','Fatigue','frais','épuisé']];
 const COLORS=['#0F00B7','#780000','#5B7A2E','#A86F00','#8A2F6B','#2E7D8A'];
-const DOG_FIELDS=[['race','Race / type',1],['age','Âge',1],['poids','Poids',1],['depart','Point de départ'],['capacites','Capacités'],['difficultes','Difficultés'],['motivations','Motivations (renforçateurs)'],['contraintes','Contraintes (santé, environnement…)'],['priorites','Mes priorités']];
-const HUMAN_FIELDS=[['depart','Point de départ sportif'],['capacites','Capacités'],['difficultes','Difficultés'],['motivations','Motivations'],['contraintes','Contraintes (emploi du temps, santé…)'],['priorites','Priorités']];
+const DOG_FIELDS=[['race','Race / type',1],['age','Âge / naissance',1],['poids','Poids, silhouette',1],['depart','Point de départ'],['sante','Santé, traitements, contre-indications, avis vétérinaire'],['historique','Historique sportif et éducatif'],['capacites','Capacités'],['difficultes','Difficultés'],['motivations','Motivations (renforçateurs)'],['environnement','Environnements de pratique'],['materiel','Matériel'],['contraintes','Contraintes'],['priorites','Mes priorités']];
+const HUMAN_FIELDS=[['age','Âge',1],['depart','Point de départ sportif'],['sante','Santé, douleurs, contre-indications, avis médical'],['historique','Historique sportif'],['capacites','Capacités'],['difficultes','Difficultés'],['materiel','Matériel'],['disponibilite','Disponibilités'],['environnement','Environnement de pratique'],['motivations','Motivations'],['contraintes','Contraintes'],['priorites','Priorités']];
 const CATEGORIES=['Canicross','Préparation du chien de sport','Proprioception','Développement du jeu','Gestion des émotions','Autocontrôles','Obéissance','Entraînement humain','Autre'];
 
 /* ---------- état ---------- */
@@ -438,7 +442,8 @@ function spark(vals,lo,hi){if(vals.length<2)return '';const W=56,H=18;const X=i=
 function itemSummary(it,ev){
   const last=ev[ev.length-1];const v=valOf(last,it);if(v===null)return '';
   const hist=ev.map(e=>valOf(e,it)).filter(x=>x!==null);const prev=hist.length>1?hist[hist.length-2]:null;
-  const lbl=`<span class="bh-l">${esc(it.label)}${it.type==='scale'&&(it.lo||it.hi)?`<small>1 ${esc(it.lo||'')} · 5 ${esc(it.hi||'')}</small>`:''}</span>`;
+  const isH=!!(last&&last.hyp&&last.hyp[it.id]);
+  const lbl=`<span class="bh-l">${esc(it.label)}${isH?' <span class="pill warn">hypothèse</span>':''}${it.type==='scale'&&(it.lo||it.hi)?`<small>1 ${esc(it.lo||'')} · 5 ${esc(it.hi||'')}</small>`:''}</span>`;
   if(it.type==='scale'){const n=Number(v),d=prev!==null?n-Number(prev):0;
     return `<div class="bh-row">${lbl}<span class="meter" aria-label="${n} sur 5">${[1,2,3,4,5].map(i=>`<i class="${i<=n?'on':''}"></i>`).join('')}</span><span class="bh-v num">${n}/5${d?`<span class="d">${d>0?'↑':'↓'}${Math.abs(d)}</span>`:''}</span>${spark(hist.map(Number),1,5)||'<span></span>'}</div>`;}
   if(it.type==='number'){const n=Number(v),d=prev!==null?n-Number(prev):0;const nums=hist.map(Number);
@@ -458,27 +463,30 @@ function behaviorSection(pr){
   if(last.context)h+=`<p class="small muted">Contexte : ${esc(last.context)}</p>`;
   (pr.grid.sections||[]).forEach(sec=>{const rows=(sec.items||[]).map(it=>itemSummary(it,ev)).filter(Boolean);if(!rows.length)return;
     h+=`<div class="card flat"><div class="eyebrow">${esc(sec.title)}</div><div class="bh">${rows.join('')}</div></div>`;});
+  const unk=[];(pr.grid.sections||[]).forEach(sec=>(sec.items||[]).forEach(it=>{if(!ev.some(e=>valOf(e,it)!==null))unk.push(it.label);}));
+  if(unk.length)h+=`<details class="card flat"><summary>Encore inconnu (${unk.length} critères jamais observés)</summary><p class="small muted" style="margin-top:6px">${unk.map(esc).join(' · ')}</p></details>`;
   if(last.notes)h+=`<div class="card flat"><div class="eyebrow">Notes d’observation</div><p class="small" style="white-space:pre-wrap">${esc(last.notes)}</p></div>`;
   if(ev.length>1)h+=`<p class="small muted">↑ ↓ : écart avec l’observation précédente (${esc(fmtDM(ev[ev.length-2].date))}). La courbe montre toutes les observations.</p>`;
   return h+'</section>';
 }
+const hypT=(it,base)=>`<label class="hypt"><input type="checkbox" class="ev_hyp" data-item="${it.id}" ${base&&base.hyp&&base.hyp[it.id]?'checked':''}>hypothèse</label>`;
 function evalSheet(pid,evId){
   const pr=prof(pid);const ev=evalsOf(pr);const cur=evId?(pr.evals||[]).find(e=>e.id===evId):null;
   const base=cur||ev[ev.length-1]||{values:{}};
   let b=`<input type="hidden" id="ev_pid" value="${esc(pid)}"><input type="hidden" id="ev_id" value="${esc(cur?cur.id:'')}">`;
-  if(!cur&&ev.length)b+=`<p class="small muted">Pré-rempli avec l’observation du ${esc(fmtDM(base.date))} : modifie seulement ce qui a changé. « – » = non observé.</p>`;
-  else b+='<p class="small muted">« – » = non observé : ne note que ce que tu as réellement vu.</p>';
+  if(!cur&&ev.length)b+=`<p class="small muted">Pré-rempli avec l’observation du ${esc(fmtDM(base.date))} : modifie seulement ce qui a changé.</p>`;
+  b+='<p class="small muted">Une valeur notée = <b>observée</b>. Coche « hypothèse » si c’est une supposition. « – » ou vide = <b>inconnu</b>.</p>';
   b+=`<div class="grid2"><label class="field"><span>Date</span><input class="inp" type="date" id="ev_date" value="${esc(cur?cur.date:today())}"></label><label class="field"><span>Durée d’observation</span><input class="inp" id="ev_dur" value="${esc(cur?cur.duration||'':'')}" placeholder="ex. 20 min"></label></div>
   <label class="field"><span>Contexte</span><input class="inp" id="ev_ctx" value="${esc(cur?cur.context||'':'')}" placeholder="Lieu, personnes et chiens présents, météo…"></label>`;
   (pr.grid.sections||[]).forEach(sec=>{
     b+=`<div class="edit-box"><h3>${esc(sec.title)}</h3>${sec.help?`<p class="sec-help">${esc(sec.help)}</p>`:''}`;
     (sec.items||[]).forEach(it=>{const v=valOf(base,it);const n='ev_'+it.id;
-      if(it.type==='scale')b+=`<div class="field"><span>${esc(it.label)}</span><div class="seg six">${['',1,2,3,4,5].map(k=>`<input type="radio" name="${n}" id="${n}_${k||0}" value="${k}" ${(v===null&&k==='')||(v!==null&&Number(v)===k)?'checked':''}><label for="${n}_${k||0}">${k||'–'}</label>`).join('')}</div>${it.lo||it.hi?`<div class="scale-ends"><span>1 · ${esc(it.lo||'')}</span><span>5 · ${esc(it.hi||'')}</span></div>`:''}</div>`;
+      if(it.type==='scale')b+=`<div class="field"><div class="fhead"><span>${esc(it.label)}</span>${hypT(it,base)}</div><div class="seg six">${['',1,2,3,4,5].map(k=>`<input type="radio" name="${n}" id="${n}_${k||0}" value="${k}" ${(v===null&&k==='')||(v!==null&&Number(v)===k)?'checked':''}><label for="${n}_${k||0}">${k||'–'}</label>`).join('')}</div>${it.lo||it.hi?`<div class="scale-ends"><span>1 · ${esc(it.lo||'')}</span><span>5 · ${esc(it.hi||'')}</span></div>`:''}</div>`;
       else if(it.type==='check'){const arr=Array.isArray(v)?v:[];const opts=it.options||[];const extra=arr.filter(x=>!opts.includes(x));
-        b+=`<div class="field"><span>${esc(it.label)}</span><div class="checks">${opts.map((o,i)=>`<input type="checkbox" class="ev_chk" data-item="${it.id}" id="${n}_${i}" value="${esc(o)}" ${arr.includes(o)?'checked':''}><label for="${n}_${i}">${esc(o)}</label>`).join('')}</div><input class="inp" data-other="${it.id}" value="${esc(extra.join(', '))}" placeholder="Autre (séparer par des virgules)"></div>`;}
-      else if(it.type==='choice'){const opts=it.options||[];b+=`<div class="field"><span>${esc(it.label)}</span><div class="checks"><input type="radio" name="${n}" id="${n}_x" value="" ${v===null?'checked':''}><label for="${n}_x">–</label>${opts.map((o,i)=>`<input type="radio" name="${n}" id="${n}_${i}" value="${esc(o)}" ${v===o?'checked':''}><label for="${n}_${i}">${esc(o)}</label>`).join('')}</div></div>`;}
-      else if(it.type==='number')b+=`<label class="field"><span>${esc(it.label)}${it.unit?' ('+esc(it.unit)+')':''}</span><input class="inp" type="number" step="any" inputmode="decimal" data-num-item="${it.id}" value="${v===null?'':esc(v)}"></label>`;
-      else b+=`<label class="field"><span>${esc(it.label)}</span><textarea class="inp" rows="2" data-text-item="${it.id}">${v===null?'':esc(v)}</textarea></label>`;
+        b+=`<div class="field"><div class="fhead"><span>${esc(it.label)}</span>${hypT(it,base)}</div><div class="checks">${opts.map((o,i)=>`<input type="checkbox" class="ev_chk" data-item="${it.id}" id="${n}_${i}" value="${esc(o)}" ${arr.includes(o)?'checked':''}><label for="${n}_${i}">${esc(o)}</label>`).join('')}</div><input class="inp" data-other="${it.id}" value="${esc(extra.join(', '))}" placeholder="Autre (séparer par des virgules)"></div>`;}
+      else if(it.type==='choice'){const opts=it.options||[];b+=`<div class="field"><div class="fhead"><span>${esc(it.label)}</span>${hypT(it,base)}</div><div class="checks"><input type="radio" name="${n}" id="${n}_x" value="" ${v===null?'checked':''}><label for="${n}_x">–</label>${opts.map((o,i)=>`<input type="radio" name="${n}" id="${n}_${i}" value="${esc(o)}" ${v===o?'checked':''}><label for="${n}_${i}">${esc(o)}</label>`).join('')}</div></div>`;}
+      else if(it.type==='number')b+=`<div class="field"><div class="fhead"><span>${esc(it.label)}${it.unit?' ('+esc(it.unit)+')':''}</span>${hypT(it,base)}</div><input class="inp" type="number" step="any" inputmode="decimal" data-num-item="${it.id}" value="${v===null?'':esc(v)}"></div>`;
+      else b+=`<div class="field"><div class="fhead"><span>${esc(it.label)}</span>${hypT(it,base)}</div><textarea class="inp" rows="2" data-text-item="${it.id}">${v===null?'':esc(v)}</textarea></div>`;
     });
     b+='</div>';
   });
@@ -493,7 +501,8 @@ function saveEval(){
     else if(it.type==='number'){const x=document.querySelector(`[data-num-item="${it.id}"]`);if(x&&x.value!=='')values[it.id]=Number(x.value);}
     else{const x=document.querySelector(`[data-text-item="${it.id}"]`);if(x&&x.value.trim())values[it.id]=x.value.trim();}
   }));
-  const e={id:eid||uid('ev'),date:$('#ev_date').value||today(),duration:$('#ev_dur').value.trim(),context:$('#ev_ctx').value.trim(),notes:$('#ev_notes').value.trim(),values};
+  const hyp={};document.querySelectorAll('.ev_hyp:checked').forEach(x=>{if(values[x.dataset.item]!==undefined)hyp[x.dataset.item]=true;});
+  const e={id:eid||uid('ev'),hyp,date:$('#ev_date').value||today(),duration:$('#ev_dur').value.trim(),context:$('#ev_ctx').value.trim(),notes:$('#ev_notes').value.trim(),values};
   pr.evals=pr.evals||[];const i=pr.evals.findIndex(x=>x.id===e.id);
   if(i>=0)pr.evals[i]=Object.assign({},pr.evals[i],e,{updatedAt:new Date().toISOString()});else{e.createdAt=new Date().toISOString();pr.evals.push(e);}
   put('profiles',pr);closeSheet();toast('Observation enregistrée ('+Object.keys(values).length+' critères notés)');
@@ -695,7 +704,7 @@ function viewDash(){
   const pr=prof(UI.dash);
   let h=`<div class="chips">${profs.map(p=>`<button class="chipbtn" data-act="dash" data-id="${p.id}" aria-pressed="${p.id===pr.id}"><i class="dot" style="background:${p.color}"></i>${esc(p.name)}</button>`).join('')}</div>`;
   const f=pr.fields||{};
-  h+=`<div style="margin-top:14px" class="stack-s"><h1>${esc(pr.name)}</h1><p class="muted small">${esc([f.race,f.age,f.poids].filter(Boolean).join(' · ')||(pr.kind==='human'?'Profil humain':'Profil chien'))}</p>${f.priorites?`<p class="small"><b>Priorités :</b> ${esc(f.priorites)}</p>`:''}</div>`;
+  h+=`<div style="margin-top:14px" class="stack-s"><h1>${esc(pr.name)}</h1><p class="muted small">${esc([f.race,f.age,f.poids].filter(Boolean).join(' · ')||(pr.kind==='human'?'Profil humain':'Profil chien'))}</p>${f.priorites?`<p class="small"><b>Priorités :</b> ${esc(f.priorites)}</p>`:''}${(()=>{const defs=pr.kind==='dog'?DOG_FIELDS:HUMAN_FIELDS;const filled=defs.filter(d=>!d[2]&&d[0]!=='priorites'&&f[d[0]]);return filled.length?`<details><summary>Fiche de départ (${filled.length} rubriques)</summary><dl class="kv" style="margin-top:8px">${filled.map(d=>`<dt>${esc(d[1])}</dt><dd>${esc(f[d[0]])}</dd>`).join('')}</dl><button class="btn sm" data-act="editProfile" data-id="${pr.id}" style="margin-top:8px">Modifier la fiche</button></details>`:'';})()}</div>`;
   const plans=plansOf(pr.id).filter(p=>p.status!=='archived');
   const alongPlans=plansList().filter(p=>(p.rotation||[]).includes(pr.id)&&!(p.subjects||[]).includes(pr.id));
   // prochaines actions
@@ -762,6 +771,9 @@ function viewPlan(p){
     h+='<section class="block"><h2>Objectifs</h2>'+p.objectives.map(o=>{const c=objCurrent(p,o),pc=objPct(o,c);const m=(p.metrics||[]).find(x=>x.id===o.metricId);
       return `<div class="card flat"><div class="row between"><b>${esc(o.label)}</b><span class="pct small">${pctTxt(pc)}</span></div><div class="bar"><span style="width:${pc*100}%;background:var(--ink)"></span></div><div class="small muted num">Départ ${fmtNum(o.start??0)} ${esc(o.unit||'')} → actuel <b style="color:var(--ink)">${c===null?'–':fmtNum(c)} ${esc(o.unit||'')}</b> → cible ${fmtNum(o.target??0)} ${esc(o.unit||'')}${m?' · calculé depuis la mesure « '+esc(m.label)+' » ('+(o.direction==='down'?'meilleure = plus basse':'meilleure = plus haute')+')':' · valeur actuelle saisie dans le plan'}</div></div>`;}).join('')+'</section>';
   }
+  // consignes
+  const PX=[['regles','Règles d’adaptation'],['signes','Quand simplifier ou arrêter'],['materiel','Matériel'],['donnees','Données à noter après chaque séance'],['sources','Sources et niveau de preuve']];
+  if(PX.some(x=>p[x[0]]))h+='<section class="block"><h2>Consignes du plan</h2>'+PX.filter(x=>p[x[0]]).map((x,i)=>`<details class="card flat" ${i<2?'open':''}><summary>${x[1]}</summary><p class="small" style="white-space:pre-wrap;margin-top:6px">${esc(p[x[0]])}</p></details>`).join('')+'</section>';
   // étapes
   h+='<section class="block"><h2>Étapes et critères</h2><div class="steps">';
   steps.forEach((st,i)=>{const isCur=cur&&cur.id===st.id&&p.status==='active';
@@ -846,6 +858,7 @@ function profileSheet(id,kind){
   let b=`<input type="hidden" id="pf_id" value="${esc(p.id)}"><input type="hidden" id="pf_kind" value="${esc(p.kind)}">
   <label class="field"><span>Nom</span><input id="pf_name" value="${esc(p.name)}" autocomplete="off"></label>
   <div class="field"><span>Couleur</span><div class="checks">${COLORS.map((c,i)=>`<input type="radio" name="pf_color" id="pfc${i}" value="${c}" ${p.color===c?'checked':''}><label for="pfc${i}" aria-label="Couleur ${i+1}"><i class="dot" style="background:${c};width:16px;height:16px"></i></label>`).join('')}</div></div>`;
+  b+='<p class="small muted">Précise la nature de chaque information : <b>(O)</b> observé, <b>(H)</b> hypothèse, <b>(?)</b> encore inconnu.</p>';
   const short=defs.filter(d=>d[2]);if(short.length)b+=`<div class="grid3">${short.map(d=>`<label class="field"><span>${esc(d[1])}</span><input id="pf_${d[0]}" value="${esc((p.fields||{})[d[0]]||'')}"></label>`).join('')}</div>`;
   b+=defs.filter(d=>!d[2]).map(d=>`<label class="field"><span>${esc(d[1])}</span><textarea id="pf_${d[0]}" rows="2">${esc((p.fields||{})[d[0]]||'')}</textarea></label>`).join('');
   if(id&&UI.confirm==='prof_'+id)b+='<p class="small muted">Les plans qui ne concernent que ce profil resteront, sans titulaire. Touche à nouveau pour confirmer.</p>';
@@ -900,6 +913,7 @@ function renderEditor(){
   b+=`<div class="grid2"><label class="field"><span>Début</span>${inp('startDate',d.startDate,'','date')}</label><label class="field"><span>Échéance</span>${inp('endDate',d.endDate,'','date')}</label></div>`;
   b+=`<div class="field"><span>Rythme : jours de séance</span><div class="checks">${DAYS.map((n,i)=>`<input type="checkbox" id="day_${i}" data-set="days" data-int="1" value="${i}" ${(d.days||[]).includes(i)?'checked':''}><label for="day_${i}">${n}</label>`).join('')}</div></div>`;
   b+=`<label class="field"><span>Moment indicatif (optionnel)</span>${inp('time',d.time,'ex. 7 h, avant le repas')}</label>`;
+  [['regles','Règles d’adaptation (séance manquée, trop difficile, fatigue, stress)'],['signes','Signes indiquant qu’il faut simplifier ou arrêter'],['materiel','Matériel'],['donnees','Données à noter après chaque séance'],['sources','Sources et niveau de preuve']].forEach(x=>{b+=`<label class="field"><span>${x[1]}</span><textarea class="inp" data-bind="${x[0]}" rows="3">${esc(d[x[0]]||'')}</textarea></label>`;});
   // mesures
   b+=`<div class="stack-s"><div class="row between"><span class="lbl">Mesures propres au plan</span><button class="btn sm" data-act="listAdd" data-path="metrics" data-kind="metric">+ Mesure</button></div>`+(d.metrics||[]).map((m,i)=>`<div class="inline-row">${inp('metrics.'+i+'.label',m.label,'ex. Distance')}<input class="inp" style="max-width:90px" data-bind="metrics.${i}.unit" value="${esc(m.unit||'')}" placeholder="unité"><button class="iconbtn" data-act="listDel" data-path="metrics" data-i="${i}" aria-label="Supprimer la mesure">✕</button></div>`).join('')+'</div>';
   // objectifs
@@ -947,6 +961,7 @@ function bilanSheet(it){
     else b+=`<label class="checkline"><input type="checkbox" class="bl_stepdone" ${s.done?'checked':''}><span>Étape validée</span></label>`;
     b+='</div>';
   });
+  if(p.signes)b+=`<details class="card flat"><summary>Rappel : quand simplifier ou arrêter</summary><p class="small" style="white-space:pre-wrap;margin-top:6px">${esc(p.signes)}</p></details>`;
   b+=`<label class="field"><span>Ce qui a été fait (précisions)</span><textarea class="inp" id="bl_did" rows="2" placeholder="Variantes, nombre de répétitions, lieu…">${esc(done?(it.didNote||''):'')}</textarea></label>`;
   SCALES.forEach(([k,l,lo,hi])=>{b+=`<div class="field"><span>${l}</span><div class="seg">${[1,2,3,4,5].map(n=>`<input type="radio" name="bl_${k}" id="bl_${k}${n}" value="${n}" ${num(it[k])===n?'checked':''}><label for="bl_${k}${n}">${n}</label>`).join('')}</div><div class="scale-ends"><span>1 · ${lo}</span><span>5 · ${hi}</span></div></div>`;});
   b+=`<div class="field"><span>État émotionnel</span><div class="checks">${EMOTIONS.map((e,i)=>`<input type="checkbox" id="em${i}" class="bl_em" value="${esc(e)}" ${(it.emotions||[]).includes(e)?'checked':''}><label for="em${i}">${esc(e)}</label>`).join('')}</div></div>`;
@@ -1041,6 +1056,25 @@ async function doExport(){
   openSheet('Exporter',`<p class="small">Copie ce texte et garde-le dans un fichier ou une note.</p><textarea class="inp" id="exp_txt" rows="10" readonly>${esc(data)}</textarea>`,'<button class="btn primary" data-act="copyExport">Copier</button>');
 }
 let pendingImport=null;
+const normName=s=>String(s||'').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+function importPlan(d){
+  const map={},matched=[];
+  Object.values(d.profiles||{}).forEach(ip=>{const ex=Object.values(S.profiles).find(x=>x.kind===ip.kind&&normName(x.name)===normName(ip.name));if(ex){map[ip.id]=ex.id;matched.push(ex.name);}});
+  return{map,matched};
+}
+function applyImport(d){
+  const {map}=importPlan(d);const mid=id=>map[id]||id;
+  Object.values(d.profiles||{}).forEach(ip=>{
+    if(!ip||!ip.id)return;
+    if(map[ip.id]){const ex=clone(S.profiles[map[ip.id]]);ex.fields=ex.fields||{};
+      Object.entries(ip.fields||{}).forEach(([k,v])=>{if(v&&!(ex.fields[k]||'').trim())ex.fields[k]=v;});
+      if(ip.grid&&(!ex.grid||!(ex.evals||[]).length)){ex.grid=ip.grid;ex.evals=ip.evals||[];}
+      ex.updatedAt=new Date().toISOString();put('profiles',ex);}
+    else put('profiles',ip);
+  });
+  Object.values(d.plans||{}).forEach(pl=>{if(!pl||!pl.id)return;const x=clone(pl);x.subjects=(x.subjects||[]).map(mid);x.rotation=(x.rotation||[]).map(mid);put('plans',x);});
+  Object.values(d.sessions||{}).forEach(se=>{if(!se||!se.id)return;const x=clone(se);if(x.dogId)x.dogId=mid(x.dogId);put('sessions',x);});
+}
 function removeExamples(){
   const ex=Object.values(S.sessions).filter(s=>s.example);const ids=new Set(ex.map(s=>s.id));
   Object.values(S.plans).forEach(p0=>{
@@ -1099,7 +1133,7 @@ document.addEventListener('click',e=>{
     case 'export':doExport();break;
     case 'copyExport':{const t=$('#exp_txt');const v=t.value;(navigator.clipboard&&navigator.clipboard.writeText?navigator.clipboard.writeText(v):Promise.reject()).then(()=>toast('Copié')).catch(()=>{t.focus();t.select();toast('Texte sélectionné : copie-le');});break;}
     case 'import':$('#importFile').value='';$('#importFile').click();break;
-    case 'confirmImport':{const d=pendingImport;if(!d)break;['profiles','plans','sessions'].forEach(c=>Object.values(d[c]||{}).forEach(o=>{if(o&&o.id)put(c,o);}));pendingImport=null;closeSheet();toast('Import terminé');break;}
+    case 'confirmImport':{const d=pendingImport;if(!d)break;applyImport(d);pendingImport=null;closeSheet();UI.tab='today';render();toast('Import terminé');break;}
     case 'removeExamples':if(UI.confirm==='examples'){UI.confirm=null;removeExamples();}else{UI.confirm='examples';render();}break;
     case 'gridInit':{const pr=clone(prof(ds.id));pr.grid=defaultGrid();pr.evals=pr.evals||[];put('profiles',pr);toast('Grille créée : personnalise-la ou fais une première observation');break;}
     case 'gridEdit':gridSheet(ds.id);break;
@@ -1126,7 +1160,7 @@ document.addEventListener('change',e=>{
   if(t.name==='bl_fatigue'||t.classList.contains('bl_em')||t.name==='bl_adj'){bilanHint();return;}
   if(t.dataset.set&&draft){const k=t.dataset.set;let v=t.value;if(t.dataset.int)v=Number(v);const arr=draft[k]=draft[k]||[];const i=arr.indexOf(v);if(t.checked&&i<0)arr.push(v);if(!t.checked&&i>=0)arr.splice(i,1);return;}
   if(t.dataset.bind&&draft&&t.tagName==='SELECT'){setPath(draft,t.dataset.bind,t.value);if(t.dataset.rerender)rerenderDraft();return;}
-  if(t.id==='importFile'&&t.files&&t.files[0]){const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(!d||!d.profiles)throw 0;pendingImport=d;openSheet('Importer',`<p>Fichier : ${Object.keys(d.profiles||{}).length} profils, ${Object.keys(d.plans||{}).length} plans, ${Object.keys(d.sessions||{}).length} séances.</p><p class="small muted">Les éléments ayant le même identifiant seront remplacés, les autres ajoutés.</p>`,'<button class="btn primary" data-act="confirmImport">Importer</button>');}catch(err){toast('Fichier non reconnu : choisis un export du Carnet de Meute (.json).');}};r.readAsText(t.files[0]);}
+  if(t.id==='importFile'&&t.files&&t.files[0]){const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(!d||!d.profiles)throw 0;pendingImport=d;const ip=importPlan(d);openSheet('Importer',`<p>Fichier : ${Object.keys(d.profiles||{}).length} profils, ${Object.keys(d.plans||{}).length} plans, ${Object.keys(d.sessions||{}).length} séances.</p>${ip.matched.length?`<p class="small">Profils déjà présents, complétés sans rien effacer : <b>${ip.matched.map(esc).join(', ')}</b>. Les champs que tu as déjà remplis sont conservés.</p>`:''}<p class="small muted">Les plans ayant le même identifiant seront remplacés, les autres ajoutés.</p>`,'<button class="btn primary" data-act="confirmImport">Importer</button>');}catch(err){toast('Fichier non reconnu : choisis un export du Carnet de Meute (.json).');}};r.readAsText(t.files[0]);}
 });
 document.addEventListener('input',e=>{const t=e.target;if(t.dataset.bindlist&&draft){setPath(draft,t.dataset.bindlist,t.value.split(',').map(x=>x.trim()).filter(Boolean));return;}if(t.dataset.bind&&draft&&t.tagName!=='SELECT'){let v=t.value;if(t.dataset.num)v=v===''?'':Number(v);setPath(draft,t.dataset.bind,v);}});
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.target.id==='au_pw'||e.target.id==='au_email')){e.preventDefault();authAct('signIn');return;}if(e.key==='Enter'&&e.target.id==='au_new'){e.preventDefault();authAct('setNewPw');return;}if(e.key==='Escape'&&!$('#sheet').hidden)closeSheet();});
