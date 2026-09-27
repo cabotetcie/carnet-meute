@@ -319,6 +319,39 @@ async function sbLoad(user){
   for(;;){const r=await sb.from('carnet_docs').select('collection,id,data').range(from,from+999);if(r.error)throw r.error;all.push(...r.data);if(r.data.length<1000)break;from+=1000;}
   const m={profiles:{},plans:{},sessions:{}};all.forEach(x=>{if(m[x.collection])m[x.collection][x.id]=x.data;});
   S.profiles=m.profiles;S.plans=m.plans;S.sessions=m.sessions;S.user=user;S.ready=true;schedule();
+  loadCalToken();
+}
+async function loadCalToken(){
+  S.calToken=undefined;S.calErr='';
+  try{const r=await sb.from('carnet_calendar_tokens').select('token').maybeSingle();if(r.error){S.calToken=null;S.calErr=r.error.message||'erreur';}else S.calToken=r.data?r.data.token:null;}
+  catch(e){S.calToken=null;S.calErr=(e&&e.message)||'erreur';}
+  schedule();
+}
+async function makeCalToken(){
+  const a=new Uint8Array(24);crypto.getRandomValues(a);const t=[...a].map(x=>x.toString(16).padStart(2,'0')).join('');
+  const r=await sb.from('carnet_calendar_tokens').upsert({user_id:S.user.id,token:t},{onConflict:'user_id'});
+  if(r.error){toast('Création impossible : '+(r.error.message||'erreur'));return;}
+  S.calToken=t;S.calErr='';schedule();toast('Lien d’agenda créé');
+}
+function calUrl(){return String(CFG.url).replace(/\/+$/,'').replace(/\/rest\/v1$/,'')+'/functions/v1/carnet-ics?token='+S.calToken+'&app='+encodeURIComponent(location.origin+location.pathname);}
+function agendaSection(){
+  let h='<section class="block"><h2>Agenda Google</h2><div class="card flat">';
+  if(S.calToken===undefined)h+='<p class="small muted">Chargement…</p>';
+  else if(S.calErr)h+=`<p class="small">Le lien d’agenda n’est pas encore installé dans Supabase (table <b>carnet_calendar_tokens</b> introuvable). Suis la procédure d’installation, puis recharge la page.</p><p class="small muted">${esc(S.calErr)}</p>`;
+  else if(!S.calToken)h+='<p class="small">Crée ton lien privé, puis ajoute-le dans Google Agenda : toutes les séances y apparaîtront et se mettront à jour toutes seules.</p><div class="row"><button class="btn primary sm" data-act="calCreate">Créer mon lien d’agenda</button></div>';
+  else{
+    h+=`<p class="small">Dans Google Agenda sur ordinateur : <b>Autres agendas → + → À partir de l’URL</b>, colle ce lien, puis <b>Ajouter l’agenda</b>. Google le relit toutes les quelques heures.</p>
+    <input class="inp" id="cal_url" readonly value="${esc(calUrl())}">
+    <div class="row"><button class="btn primary sm" data-act="calCopy">Copier le lien</button><button class="btn sm danger" data-act="calReset">${UI.confirm==='calreset'?'Confirmer : nouveau lien':'Régénérer le lien'}</button></div>
+    ${UI.confirm==='calreset'?'<p class="small muted">L’ancien lien cessera de fonctionner : il faudra ajouter le nouveau dans Google Agenda. Touche à nouveau pour confirmer.</p>':'<p class="small muted">Ce lien est personnel : toute personne qui l’a peut voir ton planning. Régénère-le si tu l’as partagé par erreur.</p>'}`;
+  }
+  h+='</div>';
+  const act=plansList().filter(p=>p.status==='active');
+  if(S.calToken&&act.length){
+    h+='<div class="card flat"><div class="eyebrow">Heure des séances dans l’agenda</div><p class="small muted">Sans heure, la séance apparaît en « journée entière ».</p>'+
+      act.map(p=>`<div class="stack-s" style="border-top:1px dashed var(--line);padding-top:8px"><span class="small"><b>${esc(p.title)}</b></span><div class="grid2"><label class="field"><span>Heure</span><input class="inp" type="time" data-caltime="${p.id}" value="${esc(p.calTime||'')}"></label><label class="field"><span>Durée (min)</span><input class="inp" type="number" inputmode="numeric" min="5" max="600" data-caldur="${p.id}" value="${esc(p.calDur||'')}" placeholder="30"></label></div></div>`).join('')+'</div>';
+  }
+  return h+'</section>';
 }
 function sbSession(session){
   if(!session){S.user=null;S.profiles={};S.plans={};S.sessions={};S.ready=true;sbLoading=null;schedule();return;}
@@ -806,6 +839,7 @@ function viewProfiles(){
   profilesList().forEach(p=>{const f=p.fields||{};const defs=p.kind==='dog'?DOG_FIELDS:HUMAN_FIELDS;const filled=defs.filter(d=>f[d[0]]);
     h+=`<div class="card"><div class="row between"><h2 class="row"><i class="dot" style="background:${p.color};width:12px;height:12px"></i>${esc(p.name)}</h2><span class="pill">${p.kind==='dog'?'Chien':'Humain'}</span></div>${filled.length?'<dl class="kv">'+filled.map(d=>`<dt>${esc(d[1])}</dt><dd>${esc(f[d[0]])}</dd>`).join('')+'</dl>':'<p class="small muted">Profil à compléter.</p>'}<div class="row"><button class="btn sm" data-act="editProfile" data-id="${p.id}">Modifier</button>${p.kind==='dog'?`<button class="btn sm" data-act="openDash" data-id="${p.id}">Profil comportemental${(p.evals||[]).length?' ('+p.evals.length+')':''}</button>`:''}<span class="small muted">${plansOf(p.id).length} plan(s)</span></div></div>`;});
   h+='</section>';
+  if(S.mode==='supabase')h+=agendaSection();
   const ex=Object.values(S.sessions).filter(s=>s.example).length;
   h+=`<section class="block"><h2>Données</h2><div class="card flat"><p class="small">${S.mode==='supabase'?'Tes données sont enregistrées en ligne et liées à ton compte <b>'+esc(S.user&&S.user.email)+'</b>. Personne d’autre n’y a accès.':S.mode==='sheet'?'Tes données sont enregistrées dans le fichier Google Sheets « Carnet de Meute — données » de ton Drive. Personne d’autre n’y a accès.'+(S.sheetUrl?' <a href="'+esc(S.sheetUrl)+'" target="_blank" rel="noopener">Ouvrir le fichier</a>':''):S.mode==='cloud'?'Tes données sont enregistrées en ligne avec cette page : tu les retrouves sur ton téléphone et ton ordinateur.':'Mode local : les données restent dans ce navigateur. Exporte-les régulièrement.'}</p><p class="small muted num">${profilesList().length} profils · ${plansList().length} plans · ${Object.keys(S.sessions).length} séances enregistrées</p><div class="row"><button class="btn sm" data-act="export">Exporter (JSON)</button><button class="btn sm" data-act="import">Importer</button>${S.mode==='supabase'?'<button class="btn sm" data-act="signOut">Se déconnecter</button>':''}${ex?`<button class="btn sm danger" data-act="removeExamples">${UI.confirm==='examples'?'Confirmer':'Supprimer les '+ex+' séances d’exemple'}</button>`:''}</div>${UI.confirm==='examples'?'<p class="small muted">Les validations et ajustements faits par ces exemples seront annulés. Touche à nouveau pour confirmer.</p>':''}</div></section>`;
   return h;
@@ -1094,7 +1128,7 @@ document.addEventListener('click',e=>{
   const el=e.target.closest('[data-act]');if(!el)return;
   const a=el.dataset.act,ds=el.dataset;
   if(el.type==='checkbox'&&(a==='toggleCrit'||a==='toggleStepDone')){/* handled on change */return;}
-  if(a!=='delPlan'&&a!=='removeExamples'&&a!=='delProfile'&&a!=='evalDel')UI.confirm=null;
+  if(a!=='delPlan'&&a!=='removeExamples'&&a!=='delProfile'&&a!=='evalDel'&&a!=='calReset')UI.confirm=null;
   switch(a){
     case 'tab':UI.tab=ds.tab;if(ds.tab==='plans')UI.planId=null;render();window.scrollTo(0,0);break;
     case 'openPlan':UI.tab='plans';UI.planId=ds.id;closeSheet();render();window.scrollTo(0,0);break;
@@ -1145,12 +1179,16 @@ document.addEventListener('click',e=>{
     case 'evalHist':evalHistSheet(ds.id);break;
     case 'evalDel':if(UI.confirm==='ev_'+ds.ev){UI.confirm=null;const pr=clone(prof(ds.id));pr.evals=(pr.evals||[]).filter(e=>e.id!==ds.ev);put('profiles',pr);toast('Observation supprimée');setTimeout(()=>evalHistSheet(ds.id),0);}else{UI.confirm='ev_'+ds.ev;evalHistSheet(ds.id);}break;
     case 'openDash':UI.tab='dash';UI.dash=ds.id;closeSheet();render();window.scrollTo(0,0);break;
+    case 'calCreate':makeCalToken();break;
+    case 'calCopy':{const t=$('#cal_url');const v=t.value;(navigator.clipboard&&navigator.clipboard.writeText?navigator.clipboard.writeText(v):Promise.reject()).then(()=>toast('Lien copié')).catch(()=>{t.focus();t.select();toast('Lien sélectionné : copie-le');});break;}
+    case 'calReset':if(UI.confirm==='calreset'){UI.confirm=null;makeCalToken();}else{UI.confirm='calreset';render();}break;
     case 'signIn':case 'signUp':case 'resetPw':case 'setNewPw':case 'signOut':authAct(a);break;
     case 'closeSheet':closeSheet();break;
   }
 });
 document.addEventListener('change',e=>{
   const t=e.target;
+  if(t.dataset.caltime||t.dataset.caldur){const id=t.dataset.caltime||t.dataset.caldur;const p=clone(S.plans[id]);if(!p)return;if(t.dataset.caltime)p.calTime=t.value;else p.calDur=t.value===''?'':Number(t.value);put('plans',p);toast('Heure enregistrée : l’agenda se mettra à jour');return;}
   if(t.dataset.act==='toggleCrit'){const p=clone(S.plans[t.dataset.plan]);const st=p.steps.find(s=>s.id===t.dataset.step);const c=st.criteria.find(c=>c.id===t.dataset.crit);
     if(t.checked){c.done=true;c.doneAt=today();delete c.bySession;logEntry(p,'Validé manuellement : '+c.text);}else{c.done=false;delete c.doneAt;delete c.bySession;logEntry(p,'Validation corrigée (retirée) : '+c.text);}
     put('plans',p);toast(t.checked?'Critère validé':'Validation retirée');return;}
