@@ -348,8 +348,8 @@ function agendaSection(){
   h+='</div>';
   const act=plansList().filter(p=>p.status==='active');
   if(S.calToken&&act.length){
-    h+='<div class="card flat"><div class="eyebrow">Heure des séances dans l’agenda</div><p class="small muted">Sans heure, la séance apparaît en « journée entière ».</p>'+
-      act.map(p=>`<div class="stack-s" style="border-top:1px dashed var(--line);padding-top:8px"><span class="small"><b>${esc(p.title)}</b></span><div class="grid2"><label class="field"><span>Heure</span><input class="inp" type="time" data-caltime="${p.id}" value="${esc(p.calTime||'')}"></label><label class="field"><span>Durée (min)</span><input class="inp" type="number" inputmode="numeric" min="5" max="600" data-caldur="${p.id}" value="${esc(p.calDur||'')}" placeholder="30"></label></div></div>`).join('')+'</div>';
+    h+='<div class="card flat"><div class="eyebrow">Créneaux habituels</div><p class="small muted">Un créneau par jour de séance. Sans heure : « journée entière ». Pour une seule séance, utilise le bouton « Créneau » sur la séance.</p>'+
+      act.map(p=>`<div class="stack-s" style="border-top:1px dashed var(--line);padding-top:8px"><span class="small"><b>${esc(p.title)}</b></span>${(p.days||[]).slice().sort().map(d=>{const sl=(p.calSlots||{})[d]||(validT(p.calTime)?{time:p.calTime,dur:p.calDur}:{});return `<div class="inline-row"><span class="small" style="width:2.6em">${DAYS[d]}</span><input class="inp" type="time" data-slotplan="${p.id}" data-slotday="${d}" data-slotf="time" value="${esc(sl.time||'')}"><input class="inp" style="max-width:90px" type="number" inputmode="numeric" min="5" max="600" placeholder="30 min" data-slotplan="${p.id}" data-slotday="${d}" data-slotf="dur" value="${esc(sl.dur||'')}"></div>`;}).join('')}</div>`).join('')+'</div>';
   }
   return h+'</section>';
 }
@@ -401,12 +401,17 @@ function activePause(p,d){return (p.pauses||[]).find(x=>d>=x.from&&(!x.to||d<=x.
 function occurs(p,d){return p.status==='active'&&p.startDate&&p.startDate<=d&&(!p.endDate||d<=p.endDate)&&(p.days||[]).includes(wd(d))&&!activePause(p,d);}
 function rotationDog(p,d){const r=(p.rotation||[]).filter(id=>S.profiles[id]);if(!r.length)return null;if(r.length===1||!p.startDate||d<=p.startDate)return r[0];let n=0;for(let x=p.startDate;x<d;x=addDays(x,1)){if((p.days||[]).includes(wd(x)))n++;if(n>2000)break;}return r[n%r.length];}
 function getItem(id,planId,date){const s=S.sessions[id];if(s)return s;return {id,planId,date,status:'planned',virtual:true};}
+const validT=t=>/^\d{1,2}:\d{2}$/.test(String(t||''));
+function planSlot(p,d){const sl=(p.calSlots||{})[wd(d)];if(sl&&validT(sl.time))return{time:sl.time,dur:num(sl.dur)||num(p.calDur)||30};if(validT(p.calTime))return{time:p.calTime,dur:num(p.calDur)||30};return null;}
+function slotOf(it){const p=S.plans[it.planId];if(!p)return null;if(it.allDay)return null;if(validT(it.time))return{time:it.time,dur:num(it.dur)||(planSlot(p,it.date)||{}).dur||30,own:true};return planSlot(p,it.date);}
+function slotTxt(sl){if(!sl)return'Journée';const [h,m]=sl.time.split(':').map(Number);const e=Math.min(h*60+m+sl.dur,23*60+59);return pad(h)+':'+pad(m)+'–'+pad(Math.floor(e/60))+':'+pad(e%60);}
 function itemsFor(d){
   const out={};
   for(const p of Object.values(S.plans)){if(occurs(p,d)){const id=p.id+'_'+d;out[id]=getItem(id,p.id,d);}}
   for(const s of Object.values(S.sessions)){if(s.date===d&&!out[s.id]&&S.plans[s.planId])out[s.id]=s;}
   const order=id=>{const pr=prof(id);return pr?(pr.order??99):99;};
-  return Object.values(out).sort((a,b)=>order(primary(S.plans[a.planId]))-order(primary(S.plans[b.planId]))||String(S.plans[a.planId].title).localeCompare(S.plans[b.planId].title));
+  const tkey=it=>{const sl=slotOf(it);return sl?sl.time.padStart(5,'0'):'99:99';};
+  return Object.values(out).sort((a,b)=>tkey(a).localeCompare(tkey(b))||order(primary(S.plans[a.planId]))-order(primary(S.plans[b.planId]))||String(S.plans[a.planId].title).localeCompare(S.plans[b.planId].title));
 }
 function sessionDog(it){const p=S.plans[it.planId];if(!p)return null;if(it.dogId!==undefined&&it.status==='done')return it.dogId;return it.dogId||rotationDog(p,it.date);}
 function doneSessions(planId){return Object.values(S.sessions).filter(s=>s.planId===planId&&s.status==='done').sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:String(a.doneAt||'').localeCompare(String(b.doneAt||'')));}
@@ -628,7 +633,7 @@ function sessionCard(it,opt){
   const dog=sessionDog(it);
   const data=`data-id="${esc(it.id)}" data-plan="${esc(it.planId)}" data-date="${esc(it.date)}"`;
   let h=`<div class="card"><div class="row between"><div class="row">${(p.subjects||[]).map(who).join('')}${dog&&!(p.subjects||[]).includes(dog)?'<span class="small muted">avec</span>'+who(dog):''}</div>${statusPill(it)}</div>`;
-  h+=`<div><button class="linkbtn" data-act="openPlan" data-id="${esc(p.id)}" style="text-decoration:none;color:var(--ink)"><h3>${esc(p.title)}</h3></button>`+(opt.showDate?`<div class="small muted">${esc(fmtLong(it.date))}</div>`:'')+`</div>`;
+  h+=`<div><button class="linkbtn" data-act="openPlan" data-id="${esc(p.id)}" style="text-decoration:none;color:var(--ink)"><h3>${esc(p.title)}</h3></button>`+`<div class="small muted">${opt.showDate?esc(fmtLong(it.date))+' · ':''}${esc(slotTxt(slotOf(it)))}${slotOf(it)&&slotOf(it).own?' (créneau choisi)':''}</div>`+`</div>`;
   if(it.example)h+='<span class="pill ex" style="align-self:flex-start">Exemple</span>';
   if(it.status==='done'){
     if(st)h+=`<div class="small"><span class="muted">Étape :</span> ${esc(st.title)}</div>`;
@@ -641,7 +646,7 @@ function sessionCard(it,opt){
   }else if(it.status==='planned'){
     if(st){h+=`<div class="small"><span class="muted">Étape :</span> <b>${esc(st.title)}</b>${(st.level||0)<0?` <span class="pill warn">Allégée ${st.level}</span>`:''}${st.consolidate?' <span class="pill warn">À consolider</span>':''}</div>`;
       if((st.exercises||[]).length)h+=`<ul class="ex-list">${st.exercises.slice(0,5).map(e=>`<li>${esc(e.name)}${e.dose?` <span class="muted">· ${esc(e.dose)}</span>`:''}</li>`).join('')}</ul>`;}
-    h+=`<div class="row"><button class="btn primary sm" data-act="bilan" ${data}>Faire le bilan</button><button class="btn sm" data-act="report" ${data}>Reporter</button><button class="btn ghost sm" data-act="skip" ${data}>Passer</button></div>`;
+    h+=`<div class="row"><button class="btn primary sm" data-act="bilan" ${data}>Faire le bilan</button><button class="btn sm" data-act="slot" ${data}>Créneau</button><button class="btn sm" data-act="report" ${data}>Reporter</button><button class="btn ghost sm" data-act="skip" ${data}>Passer</button></div>`;
   }else{
     h+=`<div class="row"><button class="btn ghost sm" data-act="undoMove" ${data}>Annuler ${it.status==='moved'?'le report':''}</button></div>`;
   }
@@ -1048,6 +1053,25 @@ function saveBilan(){
 }
 
 /* --- report / passer / séance ponctuelle / pause --- */
+function slotSheet(it){
+  const p=S.plans[it.planId];const sl=slotOf(it);const dn=['lundis','mardis','mercredis','jeudis','vendredis','samedis','dimanches'][wd(it.date)];
+  const b=`<input type="hidden" id="sl_id" value="${esc(it.id)}"><input type="hidden" id="sl_plan" value="${esc(it.planId)}"><input type="hidden" id="sl_date" value="${esc(it.date)}">
+  <p class="small muted">${esc(p.title)} · ${esc(fmtLong(it.date))}</p>
+  <div class="grid2"><label class="field"><span>Début</span><input class="inp" type="time" id="sl_time" value="${esc(sl?sl.time:'')}"></label><label class="field"><span>Durée (min)</span><input class="inp" type="number" inputmode="numeric" min="5" max="600" id="sl_dur" value="${esc(sl?sl.dur:'')}" placeholder="30"></label></div>
+  <div class="chips">${['07:00','12:30','18:00','19:30'].map(t=>`<button class="chipbtn" data-act="slQuick" data-v="${t}">${t}</button>`).join('')}</div>
+  <div class="checks" style="flex-direction:column;align-items:flex-start"><input type="radio" name="sl_scope" id="sl_s1" value="one" checked><label for="sl_s1">Seulement cette séance</label><input type="radio" name="sl_scope" id="sl_s2" value="day"><label for="sl_s2">Tous les ${dn} de ce plan</label></div>
+  <p class="small muted">Google Agenda affiche le nouveau créneau à sa prochaine mise à jour (souvent quelques heures).</p>`;
+  openSheet('Choisir le créneau',b,'<button class="btn primary" data-act="saveSlot">Enregistrer</button><button class="btn ghost" data-act="clearSlot">Journée entière</button>');
+}
+function saveSlot(clear){
+  const id=$('#sl_id').value,planId=$('#sl_plan').value,date=$('#sl_date').value;const time=$('#sl_time').value;const dur=num($('#sl_dur').value)||30;
+  const scope=(document.querySelector('input[name="sl_scope"]:checked')||{}).value;
+  if(!clear&&!validT(time)){toast('Choisis une heure de début.');return;}
+  if(scope==='day'){const p=clone(S.plans[planId]);p.calSlots=p.calSlots||{};if(clear)delete p.calSlots[wd(date)];else p.calSlots[wd(date)]={time,dur};put('plans',p);
+    const it=S.sessions[id];if(it&&(it.time||it.allDay)){const x=clone(it);delete x.time;delete x.dur;delete x.allDay;put('sessions',x);}}
+  else{const it=clone(getItem(id,planId,date));delete it.virtual;if(clear){delete it.time;delete it.dur;it.allDay=true;}else{it.time=time;it.dur=dur;delete it.allDay;}if(!it.createdAt)it.createdAt=new Date().toISOString();put('sessions',it);}
+  closeSheet();toast(clear?'Séance en journée entière':'Créneau enregistré : '+time);
+}
 function reportSheet(it){
   const t=today();const base=it.date<t?t:it.date;
   const opts=[[addDays(base,1),'Lendemain'],[addDays(base,2),'+2 jours'],[addDays(base,7),'+1 semaine']];
@@ -1055,6 +1079,7 @@ function reportSheet(it){
   <p class="small muted">${esc(S.plans[it.planId].title)} · prévue ${esc(fmtLong(it.date))}</p>
   <div class="chips">${opts.map(o=>`<button class="chipbtn" data-act="rpQuick" data-v="${o[0]}">${o[1]} · ${esc(fmtDM(o[0]))}</button>`).join('')}</div>
   <label class="field"><span>Nouvelle date</span><input class="inp" type="date" id="rp_date" value="${addDays(base,1)}"></label>
+  <label class="field"><span>Heure (optionnel)</span><input class="inp" type="time" id="rp_time" value="${esc((slotOf(it)||{}).time||'')}"></label>
   <label class="field"><span>Raison (optionnel)</span><input class="inp" id="rp_reason" placeholder="Météo, fatigue, emploi du temps…"></label>`;
   openSheet('Reporter la séance',b,'<button class="btn primary" data-act="saveReport">Reporter</button><button class="btn ghost" data-act="closeSheet">Annuler</button>');
 }
@@ -1062,8 +1087,9 @@ function saveReport(){
   const id=$('#rp_id').value,planId=$('#rp_plan').value,from=$('#rp_from').value,nd=$('#rp_date').value,reason=$('#rp_reason').value.trim();
   if(!nd||nd===from){toast('Choisis une autre date.');return;}
   const it=getItem(id,planId,from);const dog=sessionDog(it);
-  if(id===planId+'_'+from){put('sessions',Object.assign({},it,{status:'moved',movedTo:nd,reason}));put('sessions',{id:uid('s_'),planId,date:nd,status:'planned',movedFrom:from,dogId:dog||null,reason,createdAt:new Date().toISOString()});}
-  else put('sessions',Object.assign({},it,{date:nd,movedFrom:it.movedFrom||from,reason}));
+  const rt=($('#rp_time')||{}).value||'';const osl=slotOf(it);const extra=validT(rt)?{time:rt,dur:(osl&&osl.dur)||30}:{};
+  if(id===planId+'_'+from){put('sessions',Object.assign({},it,{status:'moved',movedTo:nd,reason}));put('sessions',Object.assign({id:uid('s_'),planId,date:nd,status:'planned',movedFrom:from,dogId:dog||null,reason,createdAt:new Date().toISOString()},extra));}
+  else put('sessions',Object.assign({},it,{date:nd,movedFrom:it.movedFrom||from,reason},extra));
   closeSheet();toast('Séance reportée au '+fmtShort(nd));
 }
 function undoMove(it){
@@ -1179,6 +1205,10 @@ document.addEventListener('click',e=>{
     case 'evalHist':evalHistSheet(ds.id);break;
     case 'evalDel':if(UI.confirm==='ev_'+ds.ev){UI.confirm=null;const pr=clone(prof(ds.id));pr.evals=(pr.evals||[]).filter(e=>e.id!==ds.ev);put('profiles',pr);toast('Observation supprimée');setTimeout(()=>evalHistSheet(ds.id),0);}else{UI.confirm='ev_'+ds.ev;evalHistSheet(ds.id);}break;
     case 'openDash':UI.tab='dash';UI.dash=ds.id;closeSheet();render();window.scrollTo(0,0);break;
+    case 'slot':slotSheet(getItem(ds.id,ds.plan,ds.date));break;
+    case 'slQuick':$('#sl_time').value=ds.v;break;
+    case 'saveSlot':saveSlot(false);break;
+    case 'clearSlot':saveSlot(true);break;
     case 'calCreate':makeCalToken();break;
     case 'calCopy':{const t=$('#cal_url');const v=t.value;(navigator.clipboard&&navigator.clipboard.writeText?navigator.clipboard.writeText(v):Promise.reject()).then(()=>toast('Lien copié')).catch(()=>{t.focus();t.select();toast('Lien sélectionné : copie-le');});break;}
     case 'calReset':if(UI.confirm==='calreset'){UI.confirm=null;makeCalToken();}else{UI.confirm='calreset';render();}break;
@@ -1188,6 +1218,10 @@ document.addEventListener('click',e=>{
 });
 document.addEventListener('change',e=>{
   const t=e.target;
+  if(t.dataset.slotplan){const p=clone(S.plans[t.dataset.slotplan]);if(!p)return;const d=t.dataset.slotday;p.calSlots=p.calSlots||{};
+    if(!p.calSlots[d]&&validT(p.calTime))p.calSlots[d]={time:p.calTime,dur:p.calDur};
+    const sl=Object.assign({},p.calSlots[d]||{});if(t.dataset.slotf==='time')sl.time=t.value;else sl.dur=t.value===''?'':Number(t.value);
+    if(!validT(sl.time)&&!sl.dur)delete p.calSlots[d];else p.calSlots[d]=sl;put('plans',p);toast('Créneau enregistré');return;}
   if(t.dataset.caltime||t.dataset.caldur){const id=t.dataset.caltime||t.dataset.caldur;const p=clone(S.plans[id]);if(!p)return;if(t.dataset.caltime)p.calTime=t.value;else p.calDur=t.value===''?'':Number(t.value);put('plans',p);toast('Heure enregistrée : l’agenda se mettra à jour');return;}
   if(t.dataset.act==='toggleCrit'){const p=clone(S.plans[t.dataset.plan]);const st=p.steps.find(s=>s.id===t.dataset.step);const c=st.criteria.find(c=>c.id===t.dataset.crit);
     if(t.checked){c.done=true;c.doneAt=today();delete c.bySession;logEntry(p,'Validé manuellement : '+c.text);}else{c.done=false;delete c.doneAt;delete c.bySession;logEntry(p,'Validation corrigée (retirée) : '+c.text);}
